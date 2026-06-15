@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wc2026.tracker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/path/to/wc2026-tracker/run_daily.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/path/to/wc2026-tracker</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>FOOTBALL_DATA_API</key>
+        <string>c9e5f8d0829443d894f7892cd084e326</string>
+        <key>TELEGRAM_BOT_TOKEN</key>
+        <string>PLACEHOLDER</string>
+        <key>TELEGRAM_CHAT_ID</key>
+        <string>PLACEHOLDER</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/path/to/wc2026-tracker/logs/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/path/to/wc2026-tracker/logs/stderr.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
