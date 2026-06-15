@@ -42,7 +42,7 @@ This runs: fetch_results → score → report → telegram_send.
 
 - Gemini: both scenarios scored independently
 - Claude: confidence % weighted as multiplier on result tier
-- ChatGPT Group K: corrected (Jamaica → Congo DRC per user confirmation)
+- ChatGPT Group K: source data corrected (Jamaica → Congo DRC)
 
 ## Project Structure
 

@@ -34,7 +34,7 @@ fifa-2026/
 - **Canonical match list** defined in `CANONICAL_MATCHES` (72 matches, 12 groups A-L)
 - **Team names normalised** bi-directionally (Chinese ↔ English) in TEAM_MAP
 - **Gemini dual scenarios**: stored as `scenario_1` / `scenario_2`, scored independently
-- **ChatGPT Group K correction**: Portugal vs Jamaica → Portugal vs Congo DRC (user-confirmed)
+- **ChatGPT Group K correction**: source data updated (Jamaica → Congo DRC)
 - **Scoring tiers**: exact=3pt, correct result=1pt, goal diff within 1=+0.5pt
 
 ## Pipeline Order (no step runs without its predecessor)

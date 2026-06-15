@@ -13,7 +13,7 @@ Perfect — I have everything I need. Let me lay out the full plan.Here's the fu
 
 A few important notes before the plan:
 
-**ChatGPT** has a different group K — it predicts Portugal vs **Jamaica** (not Congo DRC), and no Uzbekistan vs Colombia match. This is a data discrepancy worth flagging.
+**ChatGPT** had a different group K — it originally predicted Portugal vs **Jamaica** (not Congo DRC) and was missing the Uzbekistan vs Colombia match. The source data has been corrected (Jamaica → Congo DRC) per user confirmation.
 
 **Gemini** uses two scenarios per match (Scenario 1 / Scenario 2), which needs special handling — we'll score both and track which scenario performs better.
 
@@ -108,6 +108,6 @@ wc2026-tracker/
 1. **Daily run time** — what time do you want it to fire? (Suggest 8am Vancouver = after most European-time results are confirmed)
 2. **Telegram target** — is your API key `c9e5f8d0...` a bot token or a football-data key? You'll need a Telegram bot token separately (free, BotFather)
 3. **Gemini scoring** — score best-of-two scenarios, or score both independently and track separately?
-4. **ChatGPT group K discrepancy** — it predicts Portugal vs Jamaica, not Congo DRC. Should I flag this as a data error or keep it as-is?
+4. **ChatGPT group K discrepancy** — it predicted Portugal vs Jamaica, not Congo DRC. Resolved: source data corrected (Jamaica → Congo DRC).
 
 Confirm and I'll start building.
