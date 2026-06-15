@@ -152,16 +152,16 @@
 
 ## Group K
 
-| 比赛                               | 预测比分 |
-| -------------------------------- | ---- |
-| 🇵🇹 Portugal vs 🇯🇲 Jamaica    | 2-0  |
-| 🇺🇿 Uzbekistan vs 🇨🇴 Colombia | 0-2  |
-| Portugal vs Colombia             | 1-1  |
-| Jamaica vs Uzbekistan            | 1-1  |
-| Portugal vs Uzbekistan           | 3-0  |
-| Colombia vs Jamaica              | 2-1  |
+| 比赛                                     | 预测比分 |
+| -------------------------------------- | ---- |
+| 🇵🇹 Portugal vs 🇨🇩 Congo DRC         | 2-0  |
+| 🇺🇿 Uzbekistan vs 🇨🇴 Colombia       | 0-2  |
+| Portugal vs Colombia                   | 1-1  |
+| 🇨🇩 Congo DRC vs Uzbekistan          | 1-1  |
+| Portugal vs Uzbekistan                 | 3-0  |
+| Colombia vs 🇨🇩 Congo DRC            | 2-1  |
 
-**预测排名:** Portugal > Colombia > Jamaica > Uzbekistan
+**预测排名:** Portugal > Colombia > Congo DRC > Uzbekistan
 
 ---
 
