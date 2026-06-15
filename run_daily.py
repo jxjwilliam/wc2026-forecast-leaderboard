@@ -7,22 +7,26 @@ Sequences: fetch_results -> score -> report -> telegram_send
 import sys
 from pathlib import Path
 
-# Ensure project root is on the path
+from dotenv import load_dotenv
+
+# Ensure project root is on the path  
 sys.path.insert(0, str(Path(__file__).parent))
 
-import fetch_results
-import score
-import report
-import telegram_send
+load_dotenv()
+
+from fetch_results import main as fetch_main  # noqa: E402
+from score import main as score_main          # noqa: E402
+from report import main as report_main        # noqa: E402
+from telegram_send import main as telegram_main  # noqa: E402
 
 
 def main() -> None:
     print("=== WC2026 Forecast Tracker — Daily Run ===")
 
-    fetch_results.main()
-    score.main()
-    report.main()
-    telegram_send.main()
+    fetch_main()
+    score_main()
+    report_main()
+    telegram_main()
 
     print("=== Daily run complete ===")
 

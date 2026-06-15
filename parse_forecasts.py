@@ -136,6 +136,18 @@ TEAM_MAP = {
     "Panama": "巴拿马",
     "Poland": "波兰",
     "Sweden": "瑞典",
+    # Abbreviations → Chinese canonical
+    "沙特": "沙特阿拉伯",
+    # Claude PDF updated English names → Chinese canonical
+    "Cape Verde": "佛得角",
+    "Bosnia & Herz.": "波黑",
+    # football-data.org API English names → Chinese canonical
+    "Bosnia-Herzegovina": "波黑",
+    "Cape Verde Islands": "佛得角",
+    "Congo DR": "刚果(金)",
+    "South Korea": "韩国",
+    "United States": "美国",
+    "Uruguay": "乌拉圭",
 }
 
 
@@ -428,7 +440,7 @@ def parse_claude(text: str) -> list[dict]:
         r'(.+?)\s+'                         # home
         r'(\d+)[–-](\d+)\s+'                # score
         r'(.+?)\s+'                         # away
-        r'(?:Home Win|Away Win|Draw)\s+'
+        r'(?:Home Win|Away Win|Draw)(?:\s*\(.*?\))?\s*(?:✓FIXED|✔FIXED)?\s*'
         r'(\d+)%'                           # confidence
     )
 
@@ -603,14 +615,14 @@ def insert_predictions(conn: sqlite3.Connection, model_id: int,
             continue
 
         try:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT OR IGNORE INTO predictions "
                 "(model_id, match_id, scenario, home_score, away_score, confidence) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (model_id, mid, p['scenario'],
                  p['home_score'], p['away_score'], p['confidence']),
             )
-            if conn.total_changes:
+            if cur.rowcount:  # 1 if inserted, 0 if IGNORE'd (duplicate)
                 count += 1
         except sqlite3.IntegrityError:
             pass

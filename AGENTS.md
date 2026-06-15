@@ -13,10 +13,13 @@ fifa-2026/
 │   ├── chatgpt.md
 │   ├── claude.pdf
 │   ├── doubao.md
-│   └── gemini.md
+│   ├── gemini.md
+│   └── teams-groups.md    # Ground truth: 48 teams × 12 groups
 ├── docs/
 │   ├── claude-1.md        # Architecture plan
 │   └── wc2026_system_architecture.png
+├── .env.example           # Template for API keys
+├── .gitignore
 ├── forecasts.db           # SQLite (created by parse_forecasts.py)
 ├── parse_forecasts.py     # One-time: parse all 4 files → SQLite
 ├── fetch_results.py       # Daily: football-data.org API → DB
@@ -25,7 +28,6 @@ fifa-2026/
 ├── telegram_send.py       # Daily: push report to Telegram
 ├── run_daily.py           # Orchestrator
 ├── com.wc2026.tracker.plist  # macOS launchd schedule
-├── .gitignore
 └── requirements.txt
 ```
 
@@ -40,11 +42,11 @@ fifa-2026/
 ## Pipeline Order (no step runs without its predecessor)
 
 1. `parse_forecasts.py` ← COMPLETE
-2. `fetch_results.py` ← implementation needed
-3. `score.py` ← implementation needed
-4. `report.py` ← implementation needed
-5. `telegram_send.py` ← implementation needed
-6. `run_daily.py` ← orchestrator skeleton, will call 2-5
+2. `fetch_results.py` ← COMPLETE
+3. `score.py` ← COMPLETE
+4. `report.py` ← COMPLETE
+5. `telegram_send.py` ← COMPLETE (blocked on user messaging bot first)
+6. `run_daily.py` ← COMPLETE (orchestrator wiring all 5 steps)
 
 ## Running
 

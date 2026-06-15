@@ -1,3 +1,6 @@
+> **Initial architecture plan** — captured before implementation. Some design decisions were refined during build.
+> See [`AGENTS.md`](../AGENTS.md) for the current project state.
+
 Perfect — I have everything I need. Let me lay out the full plan.Here's the full system plan — no code yet, just the architecture for your review.
 
 ---
@@ -53,9 +56,9 @@ Three tiers, combining into a total score per model per match:
 | Correct result | 1 pt | Win/draw/loss direction correct |
 | Goal difference | +0.5 bonus | Goal diff within 1 of actual |
 
-For **Gemini**: both Scenario 1 and Scenario 2 scored separately, then best-of-two taken as the model's score (and we track which scenario wins more often — useful intel for you).
+For **Gemini**: both Scenario 1 and Scenario 2 are scored **independently** (not best-of-two). Each appears as a separate row in the leaderboard. This gives a fuller picture of model performance than cherry-picking the better scenario.
 
-For **Claude PDF**: confidence % used as a weight multiplier on the result tier (not exact score), rewarding calibrated confidence.
+For **Claude PDF**: confidence % used as a weight multiplier on the **result tier** (1 pt) and **diff bonus** (0.5 pt), but NOT on the exact-score tier (3 pts). This rewards calibrated confidence — a 90% confident correct result earns more than a 50% confident one.
 
 ---
 

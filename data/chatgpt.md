@@ -80,13 +80,13 @@
 | 比赛                             | 预测比分 |
 | ------------------------------ | ---- |
 | 🇳🇱 Netherlands vs 🇯🇵 Japan | 2-1  |
-| 🇺🇦 Ukraine vs 🇹🇳 Tunisia   | 1-0  |
-| Netherlands vs Ukraine         | 2-0  |
+| 🇸🇪 Sweden vs 🇹🇳 Tunisia   | 1-0  |
+| Netherlands vs Sweden         | 2-0  |
 | Japan vs Tunisia               | 2-1  |
 | Netherlands vs Tunisia         | 3-0  |
-| Japan vs Ukraine               | 1-1  |
+| Japan vs Sweden               | 1-1  |
 
-**预测排名:** Netherlands > Japan > Ukraine > Tunisia
+**预测排名:** Netherlands > Japan > Sweden > Tunisia
 
 ---
 
