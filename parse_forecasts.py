@@ -6,7 +6,7 @@ and inserts into forecasts.db.
 
 Model formats handled:
   - Claude PDF: most structured (#, date, group, teams, score, confidence %)
-  - ChatGPT: markdown tables per group (Group K corrected: Jamaica → Congo DRC)
+  - ChatGPT: markdown tables per group (source data corrected: Jamaica → Congo DRC)
   - Gemini: table with two scenarios per match
   - Doubao: table with group standings + qualification predictions
 """
@@ -126,7 +126,8 @@ TEAM_MAP = {
     "Austria": "奥地利",
     "Jordan": "约旦",
     "Portugal": "葡萄牙",
-    "Jamaica": "刚果(金)",  # ChatGPT error → corrected per user instruction
+    "Congo DRC": "刚果(金)",
+    "DR Congo": "刚果(金)",
     "Colombia": "哥伦比亚",
     "Uzbekistan": "乌兹别克斯坦",
     "England": "英格兰",
@@ -404,13 +405,6 @@ def parse_chatgpt(text: str) -> list[dict]:
                         score = parse_score(score_part)
                         if score:
                             hs, as_ = score
-                            # Group K correction: ChatGPT says Portugal vs Jamaica
-                            # User confirmed: correct to Congo DRC
-                            if current_group == 'K':
-                                if 'Jamaica' in away:
-                                    away = '刚果(金)'
-                                elif 'Jamaica' in home:
-                                    home = '刚果(金)'
                             predictions.append({
                                 'group': current_group,
                                 'home': home, 'away': away,
