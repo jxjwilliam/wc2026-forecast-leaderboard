@@ -1,7 +1,7 @@
 """
 run_daily.py — Orchestrator: runs the full daily pipeline.
 
-Sequences: fetch_results -> score -> report -> telegram_send
+Sequences: fetch_results -> score -> history_chart -> knockout -> report -> telegram_send
 """
 
 import sys
@@ -14,11 +14,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 load_dotenv()
 
-from fetch_results import main as fetch_main  # noqa: E402
-from score import main as score_main          # noqa: E402
-from knockout import main as knockout_main    # noqa: E402
-from report import main as report_main        # noqa: E402
-from telegram_send import main as telegram_main  # noqa: E402
+from fetch_results import main as fetch_main       # noqa: E402
+from score import main as score_main               # noqa: E402
+from history_chart import main as history_main     # noqa: E402
+from knockout import main as knockout_main         # noqa: E402
+from report import main as report_main             # noqa: E402
+from telegram_send import main as telegram_main    # noqa: E402
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
 
     fetch_main()
     score_main()
+    history_main()
 
     knockout_result = knockout_main()
     if knockout_result:

@@ -32,9 +32,7 @@ launchctl load ~/Library/LaunchAgents/com.wc2026.tracker.plist
 python3 run_daily.py
 ```
 
-This runs: fetch_results → score → knockout → report → telegram_send.
-
-The knockout predictor runs after scoring (it needs the leader model) and generates an HTML bracket page alongside the daily report.
+This runs: fetch_results → score → history_chart → knockout → report → telegram_send.
 
 ## Web Dashboard
 
@@ -42,11 +40,26 @@ The knockout predictor runs after scoring (it needs the leader model) and genera
 python3 dashboard.py
 ```
 
-Starts a minimal FastAPI server at `http://127.0.0.1:8080` serving:
-- **`/`** — Index page listing all daily reports and knockout predictions
-- **`/latest`** — Redirect to the most recent daily report
-- **`/knockout`** — Redirect to the most recent knockout prediction
-- **`/reports/*`** — Static file access to all generated HTML reports
+Starts a FastAPI server at `http://127.0.0.1:8080` with:
+
+| Path | Description |
+|------|-------------|
+| `/` | Index page with notifications, history chart, reports list, and knockout list |
+| `/latest` | Redirect to the most recent daily report |
+| `/knockout` | Redirect to the most recent knockout prediction |
+| `/chat` | NL→SQL chat interface powered by DeepSeek — ask questions in natural language |
+| `/reports/*` | Static file access to all generated HTML reports |
+
+**Notifications panel** on the index page shows:
+- 🗓 Today's scheduled matches with result status
+- ⏳ Overdue results (matches past date with no result)
+- 🏆 Current leader model
+- 📊 Tournament progress (matches played / total)
+- ⚠️ Missing predictions per model
+
+**Chat** — Type questions like "Which model has the highest average score?" or "Show me all matches in Group D with their results." DeepSeek converts the question to SQL behind the scenes.
+
+**Telegram** — Click "Send to Telegram" on the dashboard to push the latest report. Requires configured `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 
 ## Knockout Predictor
 
@@ -106,11 +119,12 @@ parse_forecasts.py          One-time: parse all 6 files → SQLite
 fetch_results.py            Daily: football-data.org API → DB
 fetch_deepseek_forecast.py  One-time: DeepSeek API → data/deepseek.md
 score.py                    Daily: compare predictions vs results
+history_chart.py            Daily: multi-model score history line chart
 knockout.py                 Daily: group standings → knockout bracket simulation
 report.py                   Daily: HTML + chart generation
 telegram_send.py            Daily: push report to Telegram
 run_daily.py                Orchestrator (all steps above)
-dashboard.py                FastAPI web server for reports/
+dashboard.py                FastAPI web server with chat, notifications, Telegram
 com.*.plist                 macOS launchd schedule
 requirements.txt            Python dependencies
 ```
@@ -124,18 +138,23 @@ Source files → parse_forecasts.py → forecasts.db
                                           ↓
                football-data.org → fetch_results.py → forecasts.db
                                           ↓
-                                 score.py → forecasts.db
-                                          ↓
-                    ┌─────────────────────┘
-                    ▼
-            knockout.py → reports/knockout-*.html + summary text
-                    │
-                    ▼
-              report.py → reports/*.html + *.png
-                    │
-                    ▼
-            telegram_send.py → Telegram
-                    │
-                    ▼
-            dashboard.py (serves reports/ at :8080)
+                                  score.py → forecasts.db
+                                           ↓
+                              history_chart.py → reports/history.png
+                                           ↓
+                     ┌─────────────────────┘
+                     ▼
+             knockout.py → reports/knockout-*.html + summary text
+                     │
+                     ▼
+               report.py → reports/*.html + *.png
+                     │
+                     ▼
+             telegram_send.py → Telegram
+                     │
+                     ▼
+             dashboard.py ──┬── GET /  (notifications, history chart, reports)
+                            ├── GET /chat  (NL→SQL interface)
+                            ├── POST /api/chat  (DeepSeek-powered queries)
+                            └── POST /api/telegram  (trigger send)
 ```

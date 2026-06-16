@@ -29,11 +29,12 @@ fifa-2026/
 ├── fetch_results.py       # Daily: football-data.org API → DB
 ├── fetch_deepseek_forecast.py  # One-time: DeepSeek API → data/deepseek.md
 ├── score.py               # Daily: compare predictions vs results
+├── history_chart.py       # Daily: multi-model score history line chart
 ├── knockout.py            # Daily: group standings → knockout bracket
 ├── report.py              # Daily: HTML + chart generation
 ├── telegram_send.py       # Daily: push report to Telegram
 ├── run_daily.py           # Orchestrator
-├── dashboard.py           # FastAPI web server for reports/
+├── dashboard.py           # FastAPI web server with chat + notifications + Telegram
 ├── com.wc2026.tracker.plist  # macOS launchd schedule
 └── requirements.txt
 ```
@@ -57,8 +58,9 @@ fifa-2026/
 4. `knockout.py` ← COMPLETE
 5. `report.py` ← COMPLETE
 6. `telegram_send.py` ← COMPLETE (blocked on user messaging bot first)
-7. `run_daily.py` ← COMPLETE (orchestrator wiring all 6 steps)
-8. `dashboard.py` ← COMPLETE (FastAPI server for reports/)
+7. `run_daily.py` ← COMPLETE (orchestrator wiring all 7 steps)
+8. `history_chart.py` ← COMPLETE (multi-model score history chart)
+9. `dashboard.py` ← COMPLETE (FastAPI server with chat + notifications + Telegram)
 
 ## Running
 
@@ -76,6 +78,18 @@ python3 run_daily.py
 python3 dashboard.py
 ```
 
+## Dashboard Endpoints
+
+| Path | Description |
+|------|-------------|
+| `/` | Index page with notifications, history chart, reports list |
+| `/latest` | Redirect to most recent daily report |
+| `/knockout` | Redirect to most recent knockout prediction |
+| `/chat` | NL→SQL chat interface powered by DeepSeek |
+| `/reports/*` | Static file access to HTML reports + charts |
+| `POST /api/chat` | Accept NL question, return query results |
+| `POST /api/telegram` | Trigger Telegram send of latest report |
+
 ## Data Flow
 
 ```
@@ -86,6 +100,8 @@ Source files (chatgpt.md, gemini.md, ...) ──→ parse_forecasts.py ──→
                               football-data.org → fetch_results.py → forecasts.db
                                                                         ↓
                                                            score.py → forecasts.db
+                                                                        ↓
+                                                              history_chart.py → reports/history.png
                                                                         ↓
                     ┌──────────────────────────────────────────────────┘
                     ▼
