@@ -307,6 +307,7 @@ def generate_html(bracket: dict, leader_name: str) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
 <title>WC2026 Knockout Prediction — {date.today()}</title>
 <style>
   body {{
@@ -314,7 +315,23 @@ def generate_html(bracket: dict, leader_name: str) -> str:
     max-width: 900px; margin: 0 auto; padding: 20px;
     background: #f5f7fa; color: #333;
   }}
-  h1 {{ color: #1a1a2e; border-bottom: 3px solid #e94560; padding-bottom: 8px; }}
+  h1 {{ margin: 0; font-size: 1.4em; }}
+  .logo {{ color: #1a1a2e; text-decoration: none; }}
+  .logo:hover {{ text-decoration: underline; }}
+  .header {{
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 3px solid #e94560; padding-bottom: 10px; margin-bottom: 16px;
+    flex-wrap: wrap; gap: 8px;
+  }}
+  .nav {{
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }}
+  .nav a {{
+    display: inline-block; padding: 7px 14px;
+    background: #1a1a2e; color: #fff; border-radius: 6px;
+    font-size: 0.85em; text-decoration: none; font-family: inherit; white-space: nowrap;
+  }}
+  .nav a:hover {{ opacity: 0.9; }}
   h2 {{ color: #1a1a2e; margin-top: 24px; }}
   table {{ width: 100%; border-collapse: collapse; margin: 12px 0;
            background: #fff; border-radius: 8px; overflow: hidden;
@@ -336,7 +353,14 @@ def generate_html(bracket: dict, leader_name: str) -> str:
 </style>
 </head>
 <body>
-<h1>🏆 WC2026 Knockout Prediction — {date.today()}</h1>
+<div class="header">
+  <h1><a href="/" class="logo">🏆 Knockout Prediction — {date.today()}</a></h1>
+  <div class="nav">
+    <a href="/latest">📊 Report</a>
+    <a href="/knockout">🏆 Bracket</a>
+    <a href="/chat">💬 Chat</a>
+  </div>
+</div>
 
 <div class="leader-note">
   Simulation based on <strong>{leader_name}</strong> predictions for unplayed group matches.

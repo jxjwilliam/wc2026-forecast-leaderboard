@@ -1,37 +1,38 @@
 """
-dashboard.py — FastAPI web dashboard with chat, notifications, and Telegram.
+dashboard.py — FastAPI overview + report viewer + chat + Telegram sender.
 
-Endpoints:
-  GET  /              — Index page with reports list + notifications
-  GET  /latest        — Redirect to most recent report
-  GET  /knockout      — Redirect to most recent knockout page
-  GET  /chat          — NL→SQL chat interface
-  POST /api/chat      — Accept NL question, return query results
-  POST /api/telegram  — Trigger Telegram send of latest report
-  Static /reports/*   — Reports directory files
+Routes:
+  Pages:
+    GET  /              — Overview (notifications, history chart, report links)
+    GET  /latest        — Redirect → most recent daily report (/reports/{date}.html)
+    GET  /knockout      — Redirect → most recent knockout bracket (/reports/knockout-{date}.html)
+    GET  /chat          — NL→SQL chat interface
+    GET  /reports/*     — Static files (daily HTML reports + knockout pages + charts)
+  API:
+    POST /api/chat      — Natural-language question → DeepSeek → SQL → JSON results
+    POST /api/telegram  — Trigger Telegram send of latest report
 
 Usage:
-    python3 dashboard.py
-    # → http://127.0.0.1:8080
+    python3 dashboard.py   → http://127.0.0.1:8080
 """
 
-import json
 import os
 import re
 import sqlite3
 import subprocess
 import sys
-import traceback
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import requests
 
 load_dotenv()
+
+# ─── Config ──────────────────────────────────────────────────────────────────
 
 HOST = "127.0.0.1"
 PORT = 8080
@@ -48,7 +49,38 @@ app = FastAPI(title="WC2026 Forecast Tracker")
 REPORT_DIR.mkdir(exist_ok=True)
 app.mount("/reports", StaticFiles(directory=str(REPORT_DIR)), name="reports")
 
-# ─── Database helpers ─────────────────────────────────────────────────────────
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_db_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _execute_safe(sql: str) -> dict:
+    """Execute a SELECT query safely. Return {columns, rows, error}."""
+    sql_stripped = sql.strip().rstrip(";")
+
+    if not re.match(r"^\s*SELECT\s", sql_stripped, re.IGNORECASE):
+        return {"columns": [], "rows": [], "error": "Only SELECT queries are allowed."}
+
+    for keyword in ("INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "PRAGMA", "ATTACH"):
+        if re.search(rf"\b{keyword}\b", sql_stripped, re.IGNORECASE):
+            return {"columns": [], "rows": [], "error": f"Keyword '{keyword}' is not allowed."}
+
+    try:
+        conn = _get_db_conn()
+        cur = conn.execute(sql_stripped)
+        columns = [desc[0] for desc in cur.description] if cur.description else []
+        rows = [list(row) for row in cur.fetchall()]
+        conn.close()
+        return {"columns": columns, "rows": rows, "error": None}
+    except Exception as e:
+        return {"columns": [], "rows": [], "error": str(e)}
+
 
 DB_SCHEMA_PROMPT = """
 Database: forecasts.db (SQLite)
@@ -84,36 +116,6 @@ Rules:
 """
 
 
-def _get_db_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _execute_safe(sql: str) -> dict:
-    """Execute a SELECT query safely. Return {columns, rows, error}."""
-    sql_stripped = sql.strip().rstrip(";")
-
-    # Only allow SELECT
-    if not re.match(r"^\s*SELECT\s", sql_stripped, re.IGNORECASE):
-        return {"columns": [], "rows": [], "error": "Only SELECT queries are allowed."}
-
-    # Block dangerous statements
-    for keyword in ("INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "PRAGMA", "ATTACH"):
-        if re.search(rf"\b{keyword}\b", sql_stripped, re.IGNORECASE):
-            return {"columns": [], "rows": [], "error": f"Keyword '{keyword}' is not allowed."}
-
-    try:
-        conn = _get_db_conn()
-        cur = conn.execute(sql_stripped)
-        columns = [desc[0] for desc in cur.description] if cur.description else []
-        rows = [list(row) for row in cur.fetchall()]
-        conn.close()
-        return {"columns": columns, "rows": rows, "error": None}
-    except Exception as e:
-        return {"columns": [], "rows": [], "error": str(e)}
-
-
 def _call_deepseek(question: str) -> str | None:
     """Send a question to DeepSeek and return the SQL response."""
     if not DEEPSEEK_API_KEY:
@@ -139,7 +141,6 @@ def _call_deepseek(question: str) -> str | None:
         resp.raise_for_status()
         data = resp.json()
         content = data["choices"][0]["message"]["content"].strip()
-        # Strip markdown code fences if present
         content = re.sub(r"^```(?:sql)?\s*", "", content, flags=re.IGNORECASE)
         content = content.rstrip("`").strip()
         return content
@@ -148,15 +149,13 @@ def _call_deepseek(question: str) -> str | None:
         return None
 
 
-# ─── Notifications ────────────────────────────────────────────────────────────
-
 def _get_notifications() -> list[dict]:
     """Return a list of notification dicts for the dashboard index."""
     notes: list[dict] = []
     try:
         conn = _get_db_conn()
 
-        # Today's matches
+        # ── Today's matches ──
         today_rows = conn.execute("""
             SELECT m.id, m.group_name, m.home_team, m.away_team, m.match_date,
                    r.home_score IS NOT NULL AS has_result,
@@ -176,14 +175,11 @@ def _get_notifications() -> list[dict]:
                     )
                 else:
                     match_lines.append(f"{r['home_team']} vs {r['away_team']} ⏳")
-            notes.append({
-                "type": "info",
-                "icon": "🗓",
-                "title": f"Today's Matches ({len(today_rows)})",
-                "lines": match_lines,
-            })
+            notes.append({"type": "info", "icon": "🗓",
+                          "title": f"Today's Matches ({len(today_rows)})",
+                          "lines": match_lines})
 
-        # Overdue results (matches past today with no result)
+        # ── Overdue results ──
         overdue = conn.execute("""
             SELECT m.match_date, m.group_name, m.home_team, m.away_team
             FROM matches m
@@ -195,14 +191,11 @@ def _get_notifications() -> list[dict]:
         if overdue:
             lines = [f"{r['match_date']} — {r['group_name']}: {r['home_team']} vs {r['away_team']}"
                      for r in overdue]
-            notes.append({
-                "type": "warning",
-                "icon": "⏳",
-                "title": f"Overdue Results ({len(overdue)})",
-                "lines": lines,
-            })
+            notes.append({"type": "warning", "icon": "⏳",
+                          "title": f"Overdue Results ({len(overdue)})",
+                          "lines": lines})
 
-        # Leader model
+        # ── Leader model ──
         leader = conn.execute("""
             SELECT m.display_name, ROUND(AVG(s.total), 4) AS avg_score, COUNT(*) AS n
             FROM scores s
@@ -214,25 +207,19 @@ def _get_notifications() -> list[dict]:
         """).fetchone()
 
         if leader:
-            notes.append({
-                "type": "info",
-                "icon": "🏆",
-                "title": "Current Leader",
-                "lines": [f"{leader['display_name']} — {leader['avg_score']:.4f} avg ({leader['n']} matches)"],
-            })
+            notes.append({"type": "info", "icon": "🏆",
+                          "title": "Current Leader",
+                          "lines": [f"{leader['display_name']} — {leader['avg_score']:.4f} avg ({leader['n']} matches)"]})
 
-        # Progress
+        # ── Tournament progress ──
         total_matches = conn.execute("SELECT COUNT(*) FROM matches WHERE stage='group'").fetchone()[0]
         scored_matches = conn.execute("SELECT COUNT(DISTINCT match_id) FROM results").fetchone()[0]
         pct = round(scored_matches / total_matches * 100, 1) if total_matches else 0
-        notes.append({
-            "type": "info",
-            "icon": "📊",
-            "title": "Tournament Progress",
-            "lines": [f"{scored_matches}/{total_matches} group matches played ({pct}%)"],
-        })
+        notes.append({"type": "info", "icon": "📊",
+                      "title": "Tournament Progress",
+                      "lines": [f"{scored_matches}/{total_matches} group matches played ({pct}%)"]})
 
-        # Missing predictions (models without predictions for matches that have results)
+        # ── Missing predictions ──
         missing = conn.execute("""
             SELECT m.display_name, COUNT(*) AS missing_count
             FROM results r
@@ -249,34 +236,23 @@ def _get_notifications() -> list[dict]:
 
         if missing:
             lines = [f"{r['display_name']}: {r['missing_count']} missing predictions" for r in missing]
-            notes.append({
-                "type": "warning",
-                "icon": "⚠️",
-                "title": "Missing Predictions",
-                "lines": lines,
-            })
+            notes.append({"type": "warning", "icon": "⚠️",
+                          "title": "Missing Predictions",
+                          "lines": lines})
 
         conn.close()
     except Exception as e:
-        notes.append({
-            "type": "error",
-            "icon": "🔴",
-            "title": "Dashboard Error",
-            "lines": [str(e)],
-        })
+        notes.append({"type": "error", "icon": "🔴",
+                      "title": "Dashboard Error",
+                      "lines": [str(e)]})
 
     if not notes:
-        notes.append({
-            "type": "info",
-            "icon": "✅",
-            "title": "All Clear",
-            "lines": ["No issues detected."],
-        })
+        notes.append({"type": "info", "icon": "✅",
+                      "title": "All Clear",
+                      "lines": ["No issues detected."]})
 
     return notes
 
-
-# ─── Endpoints ────────────────────────────────────────────────────────────────
 
 def _list_reports() -> list[dict]:
     """Return sorted list of report files with metadata."""
@@ -292,6 +268,18 @@ def _list_reports() -> list[dict]:
                 "size": f.stat().st_size,
             })
     return reports
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">⚽</text></svg>""".encode("utf-8")
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return Response(content=FAVICON_SVG, media_type="image/svg+xml")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -315,7 +303,7 @@ def index():
     # Notifications HTML
     notes_html = ""
     for n in notifications:
-        type_class = n["type"]  # info, warning, error
+        type_class = n["type"]
         lines_html = "".join(f"<div>{line}</div>" for line in n["lines"])
         notes_html += f"""<div class="note note-{type_class}">
   <div class="note-title">{n["icon"]} {n["title"]}</div>
@@ -323,10 +311,10 @@ def index():
 </div>
 """
 
-    # History chart (if exists)
+    # History chart
     history_img = ""
     if (REPORT_DIR / "history.png").exists():
-        history_img = f"""
+        history_img = """
 <h2>📈 Score History</h2>
 <div class="chart">
   <img src="/reports/history.png" alt="Model score history">
@@ -337,13 +325,27 @@ def index():
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WC2026 Forecast Tracker — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
+<title>WC2026 Forecast Tracker — Overview</title>
 <style>
   body {{ font-family: -apple-system, 'Helvetica Neue', 'Segoe UI', sans-serif;
          max-width: 900px; margin: 0 auto; padding: 20px;
          background: #f5f7fa; color: #333; }}
-  h1 {{ color: #1a1a2e; border-bottom: 3px solid #e94560; padding-bottom: 8px; }}
+  h1 {{ color: #1a1a2e; margin: 0; font-size: 1.4em; }}
+  .logo {{ color: #1a1a2e; text-decoration: none; }}
+  .logo:hover {{ text-decoration: underline; }}
   h2 {{ color: #1a1a2e; }}
+  .header {{ display: flex; justify-content: space-between; align-items: center;
+              border-bottom: 3px solid #e94560; padding-bottom: 10px; margin-bottom: 16px;
+              flex-wrap: wrap; gap: 8px; }}
+  .nav {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+  .nav a, .nav button {{
+    display: inline-block; padding: 7px 14px;
+    background: #1a1a2e; color: #fff; border-radius: 6px;
+    font-size: 0.85em; border: none; cursor: pointer;
+    text-decoration: none; font-family: inherit; white-space: nowrap;
+  }}
+  .nav button:hover {{ opacity: 0.9; }}
   table {{ width: 100%; border-collapse: collapse; margin: 12px 0;
            background: #fff; border-radius: 8px; overflow: hidden;
            box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
@@ -353,19 +355,10 @@ def index():
   a {{ color: #1a73e8; text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
   .empty {{ color: #888; font-style: italic; padding: 20px; text-align: center; }}
-  .nav {{ margin: 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }}
-  .nav a, .nav button {{
-    display: inline-block; padding: 8px 16px;
-    background: #1a1a2e; color: #fff; border-radius: 6px;
-    font-size: 0.9em; border: none; cursor: pointer;
-    text-decoration: none; font-family: inherit;
-  }}
-  .nav button:hover {{ opacity: 0.9; }}
   footer {{ margin-top: 30px; font-size: 0.8em; color: #888; text-align: center; }}
   .chart {{ text-align: center; margin: 20px 0; }}
   .chart img {{ max-width: 100%; height: auto; border-radius: 8px;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
-  /* Notifications */
   .notifications {{ margin: 16px 0; }}
   .note {{ padding: 12px 16px; margin: 8px 0; border-radius: 8px;
            box-shadow: 0 1px 3px rgba(0,0,0,0.06); }}
@@ -375,7 +368,6 @@ def index():
   .note-title {{ font-weight: bold; margin-bottom: 4px; font-size: 1.05em; }}
   .note-body {{ font-size: 0.9em; color: #555; }}
   .note-body div {{ padding: 2px 0; }}
-  /* Toast */
   .toast {{ position: fixed; bottom: 20px; right: 20px; padding: 12px 20px;
              border-radius: 8px; color: #fff; font-size: 0.9em;
              opacity: 0; transition: opacity 0.3s; z-index: 999; }}
@@ -385,35 +377,33 @@ def index():
 </style>
 </head>
 <body>
-<h1>⚽ WC2026 Forecast Tracker</h1>
-
-<div class="nav">
-  <a href="/latest">📊 Latest Report</a>
-  <a href="/knockout">🏆 Latest Knockout</a>
-  <a href="/chat">💬 Chat with Data</a>
-  <button onclick="sendTelegram()">📤 Send to Telegram</button>
+<div class="header">
+  <h1><a href="/" class="logo">⚽ WC2026 Forecast Tracker</a></h1>
+  <div class="nav">
+    <a href="/latest">📊 Report</a>
+    <a href="/knockout">🏆 Bracket</a>
+    <a href="/chat">💬 Chat</a>
+    <button onclick="sendTelegram()">📤 Telegram</button>
+  </div>
 </div>
 
-<div class="notifications">
-  {notes_html}
-</div>
+<div class="notifications">{notes_html}</div>
 
 {history_img}
 
-<h2>📊 Daily Reports</h2>
+<h2>📊 Past Reports</h2>
 <table>
 <tr><th>Date</th><th>Size</th></tr>
 {regular_rows if regular else '<tr><td class="empty" colspan="2">No reports yet.</td></tr>'}
 </table>
 
-<h2>🏆 Knockout Predictions</h2>
+<h2>🏆 Past Brackets</h2>
 <table>
 <tr><th>Date</th><th>Size</th></tr>
 {ko_rows if knockouts else '<tr><td class="empty" colspan="2">No knockout predictions yet.</td></tr>'}
 </table>
 
 <div id="toast" class="toast"></div>
-
 <footer>WC2026 Forecast Tracker · {date.today()}</footer>
 
 <script>
@@ -461,7 +451,7 @@ def knockout():
     return RedirectResponse(url=f"/reports/{reports[0]['filename']}")
 
 
-# ─── Chat ─────────────────────────────────────────────────────────────────────
+# ── Chat page ────────────────────────────────────────────────────────────────
 
 CHAT_HTML = """
 <!DOCTYPE html>
@@ -469,54 +459,71 @@ CHAT_HTML = """
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
 <title>WC2026 — Chat with Data</title>
 <style>
   body { font-family: -apple-system, 'Helvetica Neue', 'Segoe UI', sans-serif;
          max-width: 900px; margin: 0 auto; padding: 20px;
          background: #f5f7fa; color: #333; }
-  h1 { color: #1a1a2e; border-bottom: 3px solid #e94560; padding-bottom: 8px; }
-  .nav { margin: 16px 0; }
-  .nav a { display: inline-block; padding: 6px 14px; background: #1a1a2e;
-            color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.9em; }
+  h1 { color: #1a1a2e; margin: 0; font-size: 1.4em; }
+  .logo { color: #1a1a2e; text-decoration: none; }
+  .logo:hover { text-decoration: underline; }
+  .header { display: flex; justify-content: space-between; align-items: center;
+             border-bottom: 3px solid #e94560; padding-bottom: 10px; margin-bottom: 16px;
+             flex-wrap: wrap; gap: 8px; }
+  .nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nav a, .nav button { display: inline-block; padding: 7px 14px;
+    background: #1a1a2e; color: #fff; border-radius: 6px;
+    font-size: 0.85em; border: none; cursor: pointer;
+    text-decoration: none; font-family: inherit; white-space: nowrap; }
+  .nav button:hover { opacity: 0.9; }
+  .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px;
+           border-radius: 8px; color: #fff; font-size: 0.9em;
+           opacity: 0; transition: opacity 0.3s; z-index: 999; }
+  .toast.show { opacity: 1; }
+  .toast-success { background: #4caf50; }
+  .toast-error { background: #f44336; }
   #chat-box { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
               padding: 16px; height: 400px; overflow-y: auto; margin: 12px 0; }
   .msg { margin: 8px 0; padding: 10px 14px; border-radius: 8px; max-width: 85%;
          line-height: 1.4; font-size: 0.95em; }
   .user-msg { background: #e3f2fd; margin-left: auto; text-align: right; }
   .bot-msg { background: #f5f5f5; margin-right: auto; }
-  .bot-msg table { width: 100%; border-collapse: collapse; margin: 8px 0;
-                    font-size: 0.88em; }
+  .bot-msg table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.88em; }
   .bot-msg th { background: #1a1a2e; color: #fff; padding: 6px; text-align: left; }
   .bot-msg td { padding: 5px 6px; border-bottom: 1px solid #eee; }
   .bot-msg tr:nth-child(even) td { background: #fafafa; }
   .bot-msg .sql-block { background: #272822; color: #f8f8f2; padding: 8px 12px;
                          border-radius: 4px; font-family: 'SF Mono', monospace;
-                         font-size: 0.8em; margin: 6px 0; overflow-x: auto;
-                         cursor: pointer; }
-  .bot-msg .sql-label { font-size: 0.78em; color: #888; margin-top: 4px; }
+                         font-size: 0.8em; margin: 6px 0; overflow-x: auto; cursor: pointer; }
   .bot-msg .error { color: #d32f2f; font-weight: 500; }
   .bot-msg .empty { color: #888; font-style: italic; }
   .input-row { display: flex; gap: 8px; }
   .input-row input { flex: 1; padding: 10px 14px; border: 1px solid #ddd;
-                      border-radius: 8px; font-size: 0.95em; outline: none; }
+                     border-radius: 8px; font-size: 0.95em; outline: none; }
   .input-row input:focus { border-color: #1a73e8; }
   .input-row button { padding: 10px 20px; background: #1a73e8; color: #fff;
-                       border: none; border-radius: 8px; cursor: pointer;
-                       font-size: 0.95em; }
+                       border: none; border-radius: 8px; cursor: pointer; font-size: 0.95em; }
   .input-row button:disabled { opacity: 0.6; cursor: not-allowed; }
   .typing { color: #888; font-style: italic; font-size: 0.85em; padding: 8px; }
   .suggestions { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
   .suggestions button { padding: 6px 12px; background: #e8eaf6; border: 1px solid #c5cae9;
-                         border-radius: 16px; cursor: pointer; font-size: 0.82em;
-                         color: #283593; }
+                         border-radius: 16px; cursor: pointer; font-size: 0.82em; color: #283593; }
   .suggestions button:hover { background: #c5cae9; }
   details { margin: 4px 0; }
   summary { font-size: 0.82em; color: #666; cursor: pointer; }
 </style>
 </head>
 <body>
-<h1>💬 Chat with Data</h1>
-<div class="nav"><a href="/">← Back to Dashboard</a></div>
+<div class="header">
+  <h1><a href="/" class="logo">⚽ WC2026 Forecast Tracker</a> <span style="font-size:0.75em;color:#888;">— Chat</span></h1>
+  <div class="nav">
+    <a href="/latest">📊 Report</a>
+    <a href="/knockout">🏆 Bracket</a>
+    <a href="/chat">💬 Chat</a>
+    <button onclick="sendTelegram()">📤 Telegram</button>
+  </div>
+</div>
 <p style="color:#666;font-size:0.9em;">Ask questions about the forecasts in natural language. Powered by DeepSeek AI.</p>
 
 <div id="chat-box">
@@ -531,11 +538,11 @@ CHAT_HTML = """
 </div>
 
 <div class="input-row">
-  <input type="text" id="question-input" placeholder="Ask a question about the data..."
-         onkeydown="if(event.key==='Enter') send()">
+  <input type="text" id="question-input" placeholder="Ask a question about the data..." onkeydown="if(event.key==='Enter') send()">
   <button id="send-btn" onclick="send()">Ask</button>
 </div>
 
+<div id="toast" class="toast"></div>
 <script>
 async function send() {
   const input = document.getElementById('question-input');
@@ -548,18 +555,13 @@ async function send() {
 async function ask(question) {
   const box = document.getElementById('chat-box');
   const btn = document.getElementById('send-btn');
-
-  // User message
   box.innerHTML += `<div class="msg user-msg">${escapeHtml(question)}</div>`;
   box.scrollTop = box.scrollHeight;
-
-  // Typing indicator
   const typingDiv = document.createElement('div');
   typingDiv.className = 'typing';
-  typingDiv.textContent = '🤖 Thinking...';
+  typingDiv.textContent = '🤔 Thinking...';
   box.appendChild(typingDiv);
   box.scrollTop = box.scrollHeight;
-
   btn.disabled = true;
 
   try {
@@ -570,7 +572,6 @@ async function ask(question) {
     });
     const data = await resp.json();
     typingDiv.remove();
-
     let html = '<div class="msg bot-msg">';
 
     if (data.error) {
@@ -579,7 +580,6 @@ async function ask(question) {
         html += `<details><summary>View SQL</summary><div class="sql-block">${escapeHtml(data.sql)}</div></details>`;
       }
     } else if (data.columns && data.columns.length > 0) {
-      // Build table
       html += '<table><tr>';
       data.columns.forEach(c => { html += `<th>${escapeHtml(c)}</th>`; });
       html += '</tr>';
@@ -593,15 +593,12 @@ async function ask(question) {
     } else {
       html += '<div class="empty">No results found for your query.</div>';
     }
-
     html += '</div>';
     box.innerHTML += html;
-
   } catch(e) {
     typingDiv.remove();
     box.innerHTML += `<div class="msg bot-msg"><div class="error">❌ Network error: ${escapeHtml(e.message)}</div></div>`;
   }
-
   box.scrollTop = box.scrollHeight;
   btn.disabled = false;
 }
@@ -610,6 +607,30 @@ function escapeHtml(text) {
   const d = document.createElement('div');
   d.appendChild(document.createTextNode(text));
   return d.innerHTML;
+}
+
+async function sendTelegram() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳...';
+  try {
+    const resp = await fetch('/api/telegram', { method: 'POST' });
+    const data = await resp.json();
+    showToast(data.status === 'ok' ? '✅ Sent!' : '❌ ' + data.message,
+              data.status === 'ok' ? 'success' : 'error');
+  } catch(e) {
+    showToast('❌ Error', 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '📤 Telegram';
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.className = 'toast toast-' + type + ' show';
+  setTimeout(() => t.classList.remove('show'), 4000);
 }
 </script>
 </body>
@@ -621,6 +642,10 @@ function escapeHtml(text) {
 def chat_page():
     return HTMLResponse(content=CHAT_HTML)
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# API ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/chat")
 async def api_chat(request: Request):
@@ -639,15 +664,12 @@ async def api_chat(request: Request):
     return JSONResponse(result)
 
 
-# ─── Telegram send ────────────────────────────────────────────────────────────
-
 @app.post("/api/telegram")
 async def api_telegram():
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return JSONResponse({"status": "error", "message": "Telegram not configured."})
 
     try:
-        # Run telegram_send.main() in a subprocess to avoid import issues
         result = subprocess.run(
             [sys.executable, "-c", """
 from dotenv import load_dotenv
@@ -668,7 +690,9 @@ main()
         return JSONResponse({"status": "error", "message": str(e)})
 
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
     import uvicorn

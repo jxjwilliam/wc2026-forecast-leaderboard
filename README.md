@@ -40,17 +40,17 @@ This runs: fetch_results → score → history_chart → knockout → report →
 python3 dashboard.py
 ```
 
-Starts a FastAPI server at `http://127.0.0.1:8080` with:
+Starts a FastAPI server at `http://127.0.0.1:8080`:
 
-| Path | Description |
-|------|-------------|
-| `/` | Index page with notifications, history chart, reports list, and knockout list |
-| `/latest` | Redirect to the most recent daily report |
-| `/knockout` | Redirect to the most recent knockout prediction |
-| `/chat` | NL→SQL chat interface powered by DeepSeek — ask questions in natural language |
-| `/reports/*` | Static file access to all generated HTML reports |
+| Path | Nav Label | Description |
+|------|-----------|-------------|
+| `/` | *(logo)* | Overview page — notifications, score history chart, lists of past reports & past brackets |
+| `/latest` | **📊 Report** | Redirect to the most recent daily report (leaderboard, accuracy chart, match forecasts) |
+| `/knockout` | **🏆 Bracket** | Redirect to the most recent knockout bracket page |
+| `/chat` | **💬 Chat** | NL→SQL chat interface powered by DeepSeek — ask questions in natural language |
+| `/reports/*` | *(not in nav)* | Static file serving for all generated HTML reports and PNG charts |
 
-**Notifications panel** on the index page shows:
+**Notifications panel** on the overview page shows:
 - 🗓 Today's scheduled matches with result status
 - ⏳ Overdue results (matches past date with no result)
 - 🏆 Current leader model
@@ -59,7 +59,7 @@ Starts a FastAPI server at `http://127.0.0.1:8080` with:
 
 **Chat** — Type questions like "Which model has the highest average score?" or "Show me all matches in Group D with their results." DeepSeek converts the question to SQL behind the scenes.
 
-**Telegram** — Click "Send to Telegram" on the dashboard to push the latest report. Requires configured `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+**Telegram** — Click the 📤 button in the nav to push the latest report. Requires configured `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 
 ## Knockout Predictor
 
@@ -153,8 +153,10 @@ Source files → parse_forecasts.py → forecasts.db
              telegram_send.py → Telegram
                      │
                      ▼
-             dashboard.py ──┬── GET /  (notifications, history chart, reports)
-                            ├── GET /chat  (NL→SQL interface)
-                            ├── POST /api/chat  (DeepSeek-powered queries)
-                            └── POST /api/telegram  (trigger send)
+              dashboard.py ──┬── GET /          (Overview — notifications, chart, links)
+                             ├── GET /latest    (Redirect → most recent daily report)
+                             ├── GET /knockout  (Redirect → most recent knockout bracket)
+                             ├── GET /chat      (NL→SQL interface)
+                             ├── POST /api/chat (DeepSeek-powered queries)
+                             └── POST /api/telegram (trigger Telegram send)
 ```
