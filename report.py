@@ -2,9 +2,10 @@
 report.py — Daily: generate a self-contained HTML report with charts.
 
 Report sections:
-  1. Leaderboard (ranked table)
-  2. Match comparison (prediction vs real result per model)
-  3. Running accuracy chart (matplotlib PNG embedded in HTML)
+   1. Leaderboard (ranked table)
+   2. Running accuracy chart (matplotlib PNG embedded in HTML)
+   3. Today's Match Forecasts (if matches scheduled today)
+   4. Match comparison (prediction vs real result per model)
 """
 
 import base64
@@ -23,6 +24,9 @@ REPORT_DIR = Path("reports")
 # macOS Chinese font for matplotlib
 CJK_FONT_PATH = "/System/Library/Fonts/STHeiti Medium.ttc"
 CJK_FONT = fm.FontProperties(fname=CJK_FONT_PATH)
+
+# Model display order for today's forecast table
+MODEL_ORDER = ["ChatGPT", "Claude", "Gemini", "Doubao", "DeepSeek"]
 
 
 def _fmt_team(name: str) -> str:
@@ -100,6 +104,61 @@ def _build_match_rows(cur: sqlite3.Cursor) -> list[dict]:
     return list(matches.values())
 
 
+def _build_todays_forecasts(cur: sqlite3.Cursor, today: date) -> list[dict]:
+    """Return today's matches with all model predictions and actual result."""
+    cur.execute("""
+        SELECT mt.group_name, mt.home_team, mt.away_team, mt.match_number,
+               m.display_name, p.home_score, p.away_score, p.scenario,
+               r.home_score AS actual_h, r.away_score AS actual_a
+        FROM matches mt
+        JOIN predictions p ON p.match_id = mt.id
+        JOIN models m ON m.id = p.model_id
+        LEFT JOIN results r ON r.match_id = mt.id
+        WHERE mt.match_date = ?
+        ORDER BY mt.match_number, m.id, p.scenario
+    """, (today.isoformat(),))
+    rows = cur.fetchall()
+
+    if not rows:
+        return []
+
+    matches: dict[int, dict] = {}
+    for row in rows:
+        group, home, away, match_num, model_name, pred_h, pred_a, scenario, act_h, act_a = row
+        if match_num not in matches:
+            matches[match_num] = {
+                "group": group,
+                "home": home,
+                "away": away,
+                "actual_h": act_h,
+                "actual_a": act_a,
+                "preds": {m: [] for m in MODEL_ORDER},
+            }
+        pred_str = f"{pred_h}-{pred_a}"
+        matches[match_num]["preds"].setdefault(model_name, []).append(pred_str)
+
+    result = []
+    for match_num in sorted(matches.keys()):
+        m = matches[match_num]
+        pred_cells = []
+        for model in MODEL_ORDER:
+            scores = m["preds"].get(model, [])
+            if not scores:
+                pred_cells.append("—")
+            else:
+                pred_cells.append(" / ".join(scores))
+        result.append({
+            "group": m["group"],
+            "home": m["home"],
+            "away": m["away"],
+            "actual_h": m["actual_h"],
+            "actual_a": m["actual_a"],
+            "preds": pred_cells,
+        })
+
+    return result
+
+
 def _generate_chart(leaderboard: list[dict]) -> str:
     """Generate a matplotlib bar chart, return base64 PNG."""
     labels = [r["name"] for r in leaderboard]
@@ -134,7 +193,8 @@ def _generate_chart(leaderboard: list[dict]) -> str:
 
 
 def _generate_html(leaderboard: list[dict], match_rows: list[dict],
-                   chart_b64: str, today: date) -> str:
+                   chart_b64: str, today: date,
+                   todays_forecasts: list[dict] | None = None) -> str:
     """Build a self-contained HTML page."""
     rows_html = ""
     for i, r in enumerate(leaderboard):
@@ -151,6 +211,22 @@ def _generate_html(leaderboard: list[dict], match_rows: list[dict],
           <td>{r['accuracy_pct']}%</td>
         </tr>\n"""
 
+    todays_html = ""
+    if todays_forecasts:
+        for m in todays_forecasts:
+            actual = (f"{m['actual_h']}-{m['actual_a']}"
+                      if m['actual_h'] is not None else "—")
+            pred_cells = "".join(
+                f"<td>{m['preds'][i]}</td>\n"
+                for i in range(len(m['preds']))
+            )
+            todays_html += f"""<tr>
+              <td>{m['group']}</td>
+              <td>{_fmt_team(m['home'])}</td>
+              <td>{_fmt_team(m['away'])}</td>
+              {pred_cells}              <td><strong>{actual}</strong></td>
+            </tr>\n"""
+
     match_html = ""
     for m in match_rows:
         pred_cells = ""
@@ -162,9 +238,10 @@ def _generate_html(leaderboard: list[dict], match_rows: list[dict],
                 match_emoji = " ✓"
             else:
                 match_emoji = " ✗"
+            score_str = f"{p['score']:.2f}pts" if p['score'] is not None else "—"
             pred_cells += (
                 f"<span class='pred {match_emoji.strip()}'>{p['model']}: "
-                f"{p['pred_h']}-{p['pred_a']} <small>({p['score']:.2f}pts)</small>{match_emoji}</span><br>\n"
+                f"{p['pred_h']}-{p['pred_a']} <small>({score_str})</small>{match_emoji}</span><br>\n"
             )
 
         match_html += f"""<tr>
@@ -173,6 +250,19 @@ def _generate_html(leaderboard: list[dict], match_rows: list[dict],
           <td>{_fmt_team(m['away'])}</td>
           <td>{pred_cells}</td>
         </tr>\n"""
+
+    todays_section = ""
+    if todays_forecasts:
+        model_headers = "".join(f"<th>{m}</th>\n" for m in MODEL_ORDER)
+        todays_section = f"""<h2>🔮 Today's Match Forecasts</h2>
+<div class="match-section">
+<table>
+  <tr><th>Group</th><th>Home</th><th>Away</th>
+  {model_headers}  <th>Actual</th></tr>
+  {todays_html}
+</table>
+</div>
+"""
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -222,6 +312,7 @@ def _generate_html(leaderboard: list[dict], match_rows: list[dict],
   <img src="data:image/png;base64,{chart_b64}" alt="Model ranking chart">
 </div>
 
+{todays_section}
 <h2>📋 Match Results vs Predictions</h2>
 <div class="match-section">
 <table>
@@ -243,6 +334,7 @@ def main() -> None:
 
     leaderboard = _build_leaderboard(cur)
     match_rows = _build_match_rows(cur)
+    todays_forecasts = _build_todays_forecasts(cur, today)
     conn.close()
 
     if not leaderboard:
@@ -250,7 +342,7 @@ def main() -> None:
         return
 
     chart_b64 = _generate_chart(leaderboard)
-    html = _generate_html(leaderboard, match_rows, chart_b64, today)
+    html = _generate_html(leaderboard, match_rows, chart_b64, today, todays_forecasts)
 
     out_path = REPORT_DIR / f"{today}.html"
     out_path.write_text(html, encoding="utf-8")

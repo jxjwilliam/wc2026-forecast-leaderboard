@@ -81,7 +81,6 @@ TEAM_MAP = {
     "墨西哥": "墨西哥",
     "南非": "南非",
     "加拿大": "加拿大",
-    "乌克兰": "乌克兰",  # ChatGPT uses this instead of 瑞典 for group F
     # English → Chinese (for ChatGPT which outputs English names)
     "Mexico": "墨西哥",
     "South Africa": "南非",
@@ -108,7 +107,6 @@ TEAM_MAP = {
     "Ecuador": "厄瓜多尔",
     "Netherlands": "荷兰",
     "Japan": "日本",
-    "Ukraine": "乌克兰",
     "Tunisia": "突尼斯",
     "Belgium": "比利时",
     "Egypt": "埃及",
@@ -134,7 +132,6 @@ TEAM_MAP = {
     "Croatia": "克罗地亚",
     "Ghana": "加纳",
     "Panama": "巴拿马",
-    "Poland": "波兰",
     "Sweden": "瑞典",
     # Abbreviations → Chinese canonical
     "沙特": "沙特阿拉伯",
@@ -598,6 +595,53 @@ def parse_doubao(text: str) -> tuple[list[dict], list[dict]]:
     return predictions, standings
 
 
+# ─── DeepSeek parser ─────────────────────────────────────────────────────────
+
+def parse_deepseek(text: str) -> list[dict]:
+    """
+    Parse DeepSeek forecast file format:
+
+        | Group | Match | Score |
+        | --- | --- | --- |
+        | A | 墨西哥 vs 南非 | 2-0 |
+        | A | 韩国 vs 捷克 | 1-1 |
+    """
+    predictions = []
+    for line in text.split('\n'):
+        stripped = line.strip()
+        if not stripped.startswith('|') or '|' not in stripped[1:]:
+            continue
+        cells = [c.strip() for c in stripped.split('|') if c.strip()]
+        if len(cells) < 3:
+            continue
+        group = cells[0]
+        match_str = cells[1]
+        score_str = cells[2]
+
+        # Skip header / separator rows
+        if group in ('Group', '---') or 'vs' not in match_str.lower():
+            continue
+
+        teams = re.split(r'\s+[vV][sS]\s+', match_str, maxsplit=1)
+        if len(teams) != 2:
+            continue
+        home = clean_team_name(teams[0])
+        away = clean_team_name(teams[1])
+
+        score = parse_score(score_str)
+        if not score:
+            continue
+
+        predictions.append({
+            'group': group,
+            'home': home, 'away': away,
+            'home_score': score[0], 'away_score': score[1],
+            'confidence': None, 'scenario': 'single',
+        })
+
+    return predictions
+
+
 # ─── DB insertion ────────────────────────────────────────────────────────────
 
 def insert_predictions(conn: sqlite3.Connection, model_id: int,
@@ -656,6 +700,7 @@ def main() -> None:
         ("claude", "Claude", "claude.pdf"),
         ("gemini", "Gemini", "gemini.md"),
         ("doubao", "Doubao", "doubao.md"),
+        ("deepseek", "DeepSeek", "deepseek.md"),
     ]
     model_ids = {}
     for name, display, source in models:
@@ -702,6 +747,18 @@ def main() -> None:
     sc = insert_standings(conn, model_ids["doubao"], standings)
     print(f"  {sc} group standings")
     conn.commit()
+
+    # --- Parse DeepSeek ---
+    deepseek_md = DATA_DIR / "deepseek.md"
+    print("\n--- DeepSeek ---")
+    if deepseek_md.exists():
+        text = deepseek_md.read_text(encoding="utf-8")
+        preds = parse_deepseek(text)
+        c = insert_predictions(conn, model_ids["deepseek"], preds, match_map)
+        print(f"  {c} predictions")
+        conn.commit()
+    else:
+        print("  SKIP: deepseek.md not found (run fetch_deepseek_forecast.py first)")
 
     # --- Summary ---
     print("\n" + "=" * 50)

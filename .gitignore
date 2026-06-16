@@ -29,6 +29,9 @@ reports/
 reports/*.html
 reports/*.png
 
+# Agent orchestration
+.omo/
+
 # macOS launchd logs
 *.log
 *.err
