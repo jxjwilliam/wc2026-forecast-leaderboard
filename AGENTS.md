@@ -2,9 +2,10 @@
 
 ## Project Overview
 
-Ingest 5 LLM forecasts (ChatGPT, Claude, Gemini-1, Gemini-2, Doubao, DeepSeek)
-for the 2026 World Cup, fetch real results daily, score each model, and deliver
-a ranked comparison via Telegram.
+Ingest 6 LLM forecasts (ChatGPT, Claude, Gemini-1, Gemini-2, Doubao, DeepSeek)
+for the 2026 World Cup, fetch real results daily, score each model, deliver
+a ranked comparison via Telegram, simulate knockout bracket, and serve
+results via a local web dashboard.
 
 ## Project Structure
 
@@ -28,9 +29,11 @@ fifa-2026/
 ├── fetch_results.py       # Daily: football-data.org API → DB
 ├── fetch_deepseek_forecast.py  # One-time: DeepSeek API → data/deepseek.md
 ├── score.py               # Daily: compare predictions vs results
+├── knockout.py            # Daily: group standings → knockout bracket
 ├── report.py              # Daily: HTML + chart generation
 ├── telegram_send.py       # Daily: push report to Telegram
 ├── run_daily.py           # Orchestrator
+├── dashboard.py           # FastAPI web server for reports/
 ├── com.wc2026.tracker.plist  # macOS launchd schedule
 └── requirements.txt
 ```
@@ -51,9 +54,11 @@ fifa-2026/
 1. `parse_forecasts.py` ← COMPLETE
 2. `fetch_results.py` ← COMPLETE
 3. `score.py` ← COMPLETE
-4. `report.py` ← COMPLETE
-5. `telegram_send.py` ← COMPLETE (blocked on user messaging bot first)
-6. `run_daily.py` ← COMPLETE (orchestrator wiring all 5 steps)
+4. `knockout.py` ← COMPLETE
+5. `report.py` ← COMPLETE
+6. `telegram_send.py` ← COMPLETE (blocked on user messaging bot first)
+7. `run_daily.py` ← COMPLETE (orchestrator wiring all 6 steps)
+8. `dashboard.py` ← COMPLETE (FastAPI server for reports/)
 
 ## Running
 
@@ -66,20 +71,29 @@ python3 parse_forecasts.py
 
 # Daily pipeline
 python3 run_daily.py
+
+# Web dashboard (serves reports/ at :8080)
+python3 dashboard.py
 ```
 
 ## Data Flow
 
 ```
 fetch_deepseek_forecast.py ──→ data/deepseek.md ──┐
-                                                   ▼
+                                                    ▼
 Source files (chatgpt.md, gemini.md, ...) ──→ parse_forecasts.py ──→ forecasts.db
-                                                                       ↓
+                                                                        ↓
                               football-data.org → fetch_results.py → forecasts.db
-                                                                       ↓
-                                                          score.py → forecasts.db
-                                                                       ↓
-                                                          report.py → reports/*.html + *.png
-                                                                       ↓
-                                                          telegram_send.py → Telegram channel
+                                                                        ↓
+                                                           score.py → forecasts.db
+                                                                        ↓
+                    ┌──────────────────────────────────────────────────┘
+                    ▼
+            knockout.py → reports/knockout-*.html + summary text
+                    │
+                    ▼
+              report.py → reports/*.html + *.png
+                    │
+                    ▼
+            telegram_send.py → Telegram channel
 ```

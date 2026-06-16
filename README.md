@@ -1,8 +1,9 @@
 # WC2026 Forecast Tracker
 
-Tracks 5 LLM forecasts (ChatGPT, Claude, Gemini-1, Gemini-2, Doubao, DeepSeek)
+Tracks 6 LLM forecasts (ChatGPT, Claude, Gemini-1, Gemini-2, Doubao, DeepSeek)
 for the 2026 FIFA World Cup, fetches real results daily, scores each model, and
-delivers a ranked leaderboard to Telegram.
+delivers a ranked leaderboard to Telegram — plus a knockout bracket simulation
+and a local web dashboard.
 
 ## Setup
 
@@ -31,7 +32,39 @@ launchctl load ~/Library/LaunchAgents/com.wc2026.tracker.plist
 python3 run_daily.py
 ```
 
-This runs: fetch_results → score → report → telegram_send.
+This runs: fetch_results → score → knockout → report → telegram_send.
+
+The knockout predictor runs after scoring (it needs the leader model) and generates an HTML bracket page alongside the daily report.
+
+## Web Dashboard
+
+```bash
+python3 dashboard.py
+```
+
+Starts a minimal FastAPI server at `http://127.0.0.1:8080` serving:
+- **`/`** — Index page listing all daily reports and knockout predictions
+- **`/latest`** — Redirect to the most recent daily report
+- **`/knockout`** — Redirect to the most recent knockout prediction
+- **`/reports/*`** — Static file access to all generated HTML reports
+
+## Knockout Predictor
+
+Standalone use:
+```bash
+python3 knockout.py
+```
+
+The knockout predictor:
+1. Identifies the current leader model (highest avg score)
+2. Computes group A-L standings from actual results + leader predictions
+3. Determines 32 qualifiers (top 2 per group + 8 best 3rd-place)
+4. Seeds a single-elimination bracket by group stage performance
+5. Simulates R32 → R16 → QF → SF → 3rd-place playoff → Final
+6. Saves an HTML bracket page to `reports/knockout-{date}.html`
+7. Returns a Telegram-friendly summary
+
+**Knockout matches are resolved by comparing each team's group stage record (points → goal difference → goals scored), not by head-to-head prediction.**
 
 ## Environment Variables
 
@@ -64,28 +97,45 @@ Tiers are **cumulative** — a match can earn all three if conditions are met.
 ## Project Structure
 
 ```
-data/                   LLM forecast source files
-docs/                   Architecture plan + diagram + design specs
-forecasts.db            SQLite database (generated)
-reports/                Daily HTML reports + charts (generated)
-.env                    Environment variables (API keys)
-*.py                    Pipeline modules
-fetch_deepseek_forecast.py  DeepSeek forecast generator
-com.*.plist             macOS launchd schedule
+data/                       LLM forecast source files
+docs/                       Architecture plan + diagram + design specs
+forecasts.db                SQLite database (generated)
+reports/                    Daily HTML reports + charts + bracket pages (generated)
+.env                        Environment variables (API keys)
+parse_forecasts.py          One-time: parse all 6 files → SQLite
+fetch_results.py            Daily: football-data.org API → DB
+fetch_deepseek_forecast.py  One-time: DeepSeek API → data/deepseek.md
+score.py                    Daily: compare predictions vs results
+knockout.py                 Daily: group standings → knockout bracket simulation
+report.py                   Daily: HTML + chart generation
+telegram_send.py            Daily: push report to Telegram
+run_daily.py                Orchestrator (all steps above)
+dashboard.py                FastAPI web server for reports/
+com.*.plist                 macOS launchd schedule
+requirements.txt            Python dependencies
 ```
 
 ## Pipeline
 
 ```
 fetch_deepseek_forecast.py → data/deepseek.md ──┐
-                                                 ▼
+                                                  ▼
 Source files → parse_forecasts.py → forecasts.db
-                                         ↓
-              football-data.org → fetch_results.py → forecasts.db
-                                         ↓
-                                score.py → forecasts.db
-                                         ↓
-                                report.py → reports/*.html + *.png
-                                         ↓
-                                telegram_send.py → Telegram
+                                          ↓
+               football-data.org → fetch_results.py → forecasts.db
+                                          ↓
+                                 score.py → forecasts.db
+                                          ↓
+                    ┌─────────────────────┘
+                    ▼
+            knockout.py → reports/knockout-*.html + summary text
+                    │
+                    ▼
+              report.py → reports/*.html + *.png
+                    │
+                    ▼
+            telegram_send.py → Telegram
+                    │
+                    ▼
+            dashboard.py (serves reports/ at :8080)
 ```
