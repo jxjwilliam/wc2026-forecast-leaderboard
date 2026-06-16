@@ -26,7 +26,7 @@ CJK_FONT_PATH = "/System/Library/Fonts/STHeiti Medium.ttc"
 CJK_FONT = fm.FontProperties(fname=CJK_FONT_PATH)
 
 # Model display order for today's forecast table
-MODEL_ORDER = ["ChatGPT", "Claude", "Gemini", "Doubao", "DeepSeek"]
+MODEL_ORDER = ["ChatGPT", "Claude", "Gemini-1", "Gemini-2", "Doubao", "DeepSeek"]
 
 
 def _fmt_team(name: str) -> str:

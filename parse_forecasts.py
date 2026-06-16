@@ -698,7 +698,8 @@ def main() -> None:
     models = [
         ("chatgpt", "ChatGPT", "chatgpt.md"),
         ("claude", "Claude", "claude.pdf"),
-        ("gemini", "Gemini", "gemini.md"),
+        ("gemini1", "Gemini-1", "gemini.md"),
+        ("gemini2", "Gemini-2", "gemini.md"),
         ("doubao", "Doubao", "doubao.md"),
         ("deepseek", "DeepSeek", "deepseek.md"),
     ]
@@ -706,6 +707,18 @@ def main() -> None:
     for name, display, source in models:
         model_ids[name] = get_or_create_model(conn, name, display, source)
     print(f"Models: {len(model_ids)} registered")
+
+    # Migrate: if old single "gemini" model exists, replace with gemini1/gemini2
+    cur = conn.execute("SELECT id FROM models WHERE name = 'gemini'")
+    old_gemini = cur.fetchone()
+    if old_gemini:
+        old_id = old_gemini[0]
+        conn.execute("DELETE FROM scores WHERE prediction_id IN (SELECT id FROM predictions WHERE model_id = ?)", (old_id,))
+        conn.execute("DELETE FROM predictions WHERE model_id = ?", (old_id,))
+        conn.execute("DELETE FROM group_standings WHERE model_id = ?", (old_id,))
+        conn.execute("DELETE FROM models WHERE id = ?", (old_id,))
+        conn.commit()
+        print(f"  Migrated: old 'Gemini' model ({old_id}) replaced by Gemini-1 / Gemini-2")
 
     # Insert matches
     match_map = insert_matches(conn)
@@ -730,12 +743,20 @@ def main() -> None:
     print(f"  {c} predictions")
     conn.commit()
 
-    # --- Parse Gemini ---
-    print("\n--- Gemini ---")
+    # --- Parse Gemini (split into Gemini-1 and Gemini-2 by scenario) ---
+    print("\n--- Gemini-1 / Gemini-2 ---")
     text = (DATA_DIR / "gemini.md").read_text(encoding="utf-8")
     preds = parse_gemini(text)
-    c = insert_predictions(conn, model_ids["gemini"], preds, match_map)
-    print(f"  {c} predictions (both scenarios)")
+    preds_1 = [p for p in preds if p['scenario'] == 'scenario_1']
+    preds_2 = [p for p in preds if p['scenario'] == 'scenario_2']
+    for p in preds_1:
+        p['scenario'] = 'single'
+    for p in preds_2:
+        p['scenario'] = 'single'
+    c1 = insert_predictions(conn, model_ids["gemini1"], preds_1, match_map)
+    c2 = insert_predictions(conn, model_ids["gemini2"], preds_2, match_map)
+    print(f"  Gemini-1: {c1} predictions")
+    print(f"  Gemini-2: {c2} predictions")
     conn.commit()
 
     # --- Parse Doubao ---

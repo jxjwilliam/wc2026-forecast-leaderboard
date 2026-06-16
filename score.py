@@ -7,7 +7,7 @@ Scoring tiers (per model per match, cumulative):
   - Goal diff within 1:  +0.5 bonus
 
 Special handling:
-  - Gemini: score scenario_1 and scenario_2 independently (2 entries per match)
+  - Gemini: scored as two separate models (Gemini-1 for scenario_1, Gemini-2 for scenario_2)
   - Claude: confidence % applied as multiplier on the result tiers
             (exact score tier is NOT multiplied)
 """
