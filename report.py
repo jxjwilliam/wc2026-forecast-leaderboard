@@ -69,8 +69,8 @@ def _build_leaderboard(cur: sqlite3.Cursor) -> list[dict]:
     ]
 
 
-def _build_match_rows(cur: sqlite3.Cursor) -> list[dict]:
-    """Return each match with all model predictions and actual score."""
+def _build_knockout_rows(cur: sqlite3.Cursor) -> tuple[list[dict], list[dict]]:
+    """Return (scored_matches, no_prediction_matches) for knockout stage."""
     cur.execute("""
         SELECT r.id, r.match_id, m2.home_team, m2.away_team,
                r.home_score, r.away_score,
@@ -80,8 +80,55 @@ def _build_match_rows(cur: sqlite3.Cursor) -> list[dict]:
         LEFT JOIN predictions p ON p.match_id = r.match_id
         LEFT JOIN models m ON m.id = p.model_id
         LEFT JOIN scores s ON s.prediction_id = p.id
+        WHERE m2.stage = 'knockout'
         ORDER BY r.match_id, m.id
     """)
+    rows = cur.fetchall()
+    matches: dict[int, dict] = {}
+    for row in rows:
+        mid = row[1]
+        if mid not in matches:
+            matches[mid] = {
+                "home": row[2],
+                "away": row[3],
+                "home_score": row[4],
+                "away_score": row[5],
+                "predictions": [],
+            }
+        if row[6] is not None:
+            matches[mid]["predictions"].append({
+                "model": row[6],
+                "pred_h": row[7],
+                "pred_a": row[8],
+                "score": row[9],
+            })
+
+    scored, no_pred = [], []
+    for m in matches.values():
+        if m["predictions"]:
+            scored.append(m)
+        else:
+            no_pred.append(m)
+    return scored, no_pred
+
+
+def _build_match_rows(cur: sqlite3.Cursor, stage: str = "group") -> list[dict]:
+    """Return each match with all model predictions and actual score.
+
+    stage: "group" or "knockout"
+    """
+    cur.execute(f"""
+        SELECT r.id, r.match_id, m2.home_team, m2.away_team,
+               r.home_score, r.away_score,
+               m.display_name, p.home_score, p.away_score, s.total
+        FROM results r
+        JOIN matches m2 ON m2.id = r.match_id
+        LEFT JOIN predictions p ON p.match_id = r.match_id
+        LEFT JOIN models m ON m.id = p.model_id
+        LEFT JOIN scores s ON s.prediction_id = p.id
+        WHERE m2.stage = ?
+        ORDER BY r.match_id, m.id
+    """, (stage,))
     rows = cur.fetchall()
     matches: dict[int, dict] = {}
     for row in rows:
@@ -194,7 +241,9 @@ def _generate_chart(leaderboard: list[dict]) -> str:
 
 def _generate_html(leaderboard: list[dict], match_rows: list[dict],
                    chart_b64: str, today: date,
-                   todays_forecasts: list[dict] | None = None) -> str:
+                   todays_forecasts: list[dict] | None = None,
+                   knockout_scored: list[dict] | None = None,
+                   knockout_no_pred: list[dict] | None = None) -> str:
     """Build a self-contained HTML page."""
     rows_html = ""
     for i, r in enumerate(leaderboard):
@@ -264,6 +313,59 @@ def _generate_html(leaderboard: list[dict], match_rows: list[dict],
 </div>
 """
 
+    # Build knockout section
+    knockout_section = ""
+    if knockout_scored or knockout_no_pred:
+        ko_parts = []
+
+        if knockout_scored:
+            ko_rows_html = ""
+            for m in knockout_scored:
+                pred_cells = ""
+                for p in m["predictions"]:
+                    match_emoji = ""
+                    if p["pred_h"] == m["home_score"] and p["pred_a"] == m["away_score"]:
+                        match_emoji = " ✅"
+                    elif (p["pred_h"] - p["pred_a"]) * (m["home_score"] - m["away_score"]) > 0:
+                        match_emoji = " ✓"
+                    else:
+                        match_emoji = " ✗"
+                    score_str = f"{p['score']:.2f}pts" if p['score'] is not None else "—"
+                    pred_cells += (
+                        f"<span class='pred {match_emoji.strip()}'>{p['model']}: "
+                        f"{p['pred_h']}-{p['pred_a']} <small>({score_str})</small>{match_emoji}</span><br>\n"
+                    )
+                ko_rows_html += f"""<tr>
+                  <td>{_fmt_team(m['home'])}</td>
+                  <td><strong>{m['home_score']}-{m['away_score']}</strong></td>
+                  <td>{_fmt_team(m['away'])}</td>
+                  <td>{pred_cells}</td>
+                </tr>\n"""
+            ko_parts.append(
+                f"<h2>🏆 Knockout Stage — With Predictions</h2>\n"
+                f"<div class='match-section knockout-section'>\n<table>\n"
+                f"<tr><th>Home</th><th>Score</th><th>Away</th><th>Predictions</th></tr>\n"
+                f"{ko_rows_html}</table>\n</div>"
+            )
+
+        if knockout_no_pred:
+            ko_rows_html = ""
+            for m in knockout_no_pred:
+                ko_rows_html += f"""<tr class="no-pred">
+                  <td>{_fmt_team(m['home'])}</td>
+                  <td><strong>{m['home_score']}-{m['away_score']}</strong></td>
+                  <td>{_fmt_team(m['away'])}</td>
+                  <td>⚠️ No prediction — showing actual score</td>
+                </tr>\n"""
+            ko_parts.append(
+                f"<h2>🏆 Knockout Stage — No Prediction</h2>\n"
+                f"<div class='match-section knockout-section'>\n<table>\n"
+                f"<tr><th>Home</th><th>Score</th><th>Away</th><th>Note</th></tr>\n"
+                f"{ko_rows_html}</table>\n</div>"
+            )
+
+        knockout_section = "\n".join(ko_parts)
+
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -314,6 +416,9 @@ def _generate_html(leaderboard: list[dict], match_rows: list[dict],
   .pred.✗ {{ color: #b00; }}
   .match-section {{ overflow-x: auto; }}
   .match-section td {{ vertical-align: top; }}
+  .no-pred {{ background: #fff3cd; }}
+  .no-pred td {{ color: #856404; font-style: italic; }}
+  .knockout-section {{ margin-top: 8px; }}
   footer {{ margin-top: 30px; font-size: 0.8em; color: #888; text-align: center; }}
 </style>
 </head>
@@ -338,13 +443,15 @@ def _generate_html(leaderboard: list[dict], match_rows: list[dict],
 </div>
 
 {todays_section}
-<h2>📋 Match Results vs Predictions</h2>
+<h2>📋 Group Stage — Results vs Predictions</h2>
 <div class="match-section">
 <table>
   <tr><th>Home</th><th>Score</th><th>Away</th><th>Predictions</th></tr>
   {match_html}
 </table>
 </div>
+
+{knockout_section}
 
 <footer>Generated by WC2026 Forecast Tracker · Data from football-data.org</footer>
 </body>
@@ -358,7 +465,8 @@ def main() -> None:
     cur = conn.cursor()
 
     leaderboard = _build_leaderboard(cur)
-    match_rows = _build_match_rows(cur)
+    match_rows = _build_match_rows(cur, stage="group")
+    knockout_scored, knockout_no_pred = _build_knockout_rows(cur)
     todays_forecasts = _build_todays_forecasts(cur, today)
     conn.close()
 
@@ -367,7 +475,10 @@ def main() -> None:
         return
 
     chart_b64 = _generate_chart(leaderboard)
-    html = _generate_html(leaderboard, match_rows, chart_b64, today, todays_forecasts)
+    html = _generate_html(
+        leaderboard, match_rows, chart_b64, today,
+        todays_forecasts, knockout_scored, knockout_no_pred
+    )
 
     out_path = REPORT_DIR / f"{today}.html"
     out_path.write_text(html, encoding="utf-8")

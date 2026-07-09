@@ -29,6 +29,10 @@ reports/
 reports/*.html
 reports/*.png
 
+# Screenshots (generated)
+screenshots/
+screenshots/*.png
+
 # Agent orchestration
 .omo/
 
@@ -36,3 +40,4 @@ reports/*.png
 *.log
 *.err
 *.out
+.obsidian/

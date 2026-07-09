@@ -5,6 +5,19 @@ for the 2026 FIFA World Cup, fetches real results daily, scores each model, and
 delivers a ranked leaderboard to Telegram — plus a knockout bracket simulation
 and a local web dashboard.
 
+<!-- screenshots -->
+## Screenshots
+
+| Home | Report | Bracket |
+| --- | --- | --- |
+| ![Home](screenshots/home.png) | ![Report](screenshots/report.png) | ![Bracket](screenshots/bracket.png) |
+
+| Chat |
+| --- |
+| ![Chat](screenshots/chat.png) |
+
+<!-- /screenshots -->
+
 ## Setup
 
 ```bash
