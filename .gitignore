@@ -29,10 +29,6 @@ reports/
 reports/*.html
 reports/*.png
 
-# Screenshots (generated)
-screenshots/
-screenshots/*.png
-
 # Agent orchestration
 .omo/
 
